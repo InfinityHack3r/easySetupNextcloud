@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # --- Config ---
-REQUIREMENTS_FILE="requirements.yml"
+REQUIREMENTS_FILE="ansible/requirements.yml"
 
 # --- Functions ---
 log() { echo -e "\033[1;32m[+] $*\033[0m"; }
@@ -72,14 +72,21 @@ ensure_python() {
 # Ensure deps like git/curl
 ensure_basic_deps() {
   local deps=(git curl rsync)
+  local missing_count=0
+  local missing_list=""
+  
   for d in "${deps[@]}"; do
     if ! command -v "$d" >/dev/null 2>&1; then
-      missing+=("$d")
+      missing_list="$missing_list $d"
+      ((missing_count++))
     fi
   done
-  if [ "${#missing[@]:-0}" -gt 0 ]; then
-    log "Installing missing deps: ${missing[*]}"
-    install_pkgs "${missing[@]}"
+  
+  if [ $missing_count -gt 0 ]; then
+    log "Installing missing deps:$missing_list"
+    # Convert space-separated list back to array for install_pkgs
+    read -ra missing_array <<< "$missing_list"
+    install_pkgs "${missing_array[@]}"
   fi
 }
 
@@ -87,7 +94,9 @@ ensure_basic_deps() {
 install_collections() {
   if [ -f "$REQUIREMENTS_FILE" ]; then
     log "Installing Ansible Galaxy collections from $REQUIREMENTS_FILE..."
-    ansible-galaxy collection install -r "$REQUIREMENTS_FILE"
+    cd ansible
+    ansible-galaxy collection install -r requirements.yml
+    cd ..
   else
     warn "No $REQUIREMENTS_FILE found, skipping galaxy collections."
   fi
@@ -101,4 +110,4 @@ ensure_ansible
 ensure_basic_deps
 install_collections
 
-log "Done! You can now run: ansible-playbook playbooks/site.yml --ask-vault-pass"
+log "Done! You can now run: cd ansible && ansible-playbook playbooks/site.yml --ask-vault-pass"

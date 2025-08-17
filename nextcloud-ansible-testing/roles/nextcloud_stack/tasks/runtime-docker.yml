@@ -1,0 +1,11 @@
+---
+- name: Ensure docker is running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Create project network (Docker)
+  community.docker.docker_network:
+    name: "{{ stack_network }}"
+    state: present

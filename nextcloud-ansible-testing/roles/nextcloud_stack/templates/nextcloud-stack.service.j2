@@ -1,0 +1,56 @@
+[Unit]
+Description=Nextcloud stack ({{ container_runtime_resolved|title }}) — hard refresh (terminate -> prune -> pull -> redeploy)
+Wants=network-online.target
+After=network-online.target {% if container_runtime_resolved == 'docker' %}docker.service{% else %}multi-user.target{% endif %}
+{% if container_runtime_resolved == 'docker' -%}
+Requires=docker.service
+{%- endif %}
+
+[Service]
+{% if use_service_user -%}
+User={{ service_user }}
+Group={{ service_user }}
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+{%- endif %}
+Type=oneshot
+RemainAfterExit=yes
+
+Environment=COMPOSE_PROJECT_NAME={{ compose_project_name }}
+Environment=COMPOSE_FILE={{ project_dir }}/docker-compose.yml
+WorkingDirectory={{ project_dir }}
+{% if use_service_user -%}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+{%- endif %}
+
+# ===== PRE-START CLEANUP =====
+ExecStartPre=/bin/sh -lc '{% if not use_service_user %}/usr/bin/{% endif %}{{ compose_command }} -f "$COMPOSE_FILE" down --timeout 25 --remove-orphans || true'
+{% if container_runtime_resolved == 'podman' -%}
+ExecStartPre=/bin/sh -lc '{% if not use_service_user %}/usr/bin/{% endif %}podman ps -aq --filter "label=io.podman.compose.project=$COMPOSE_PROJECT_NAME" | xargs -r {% if not use_service_user %}/usr/bin/{% endif %}podman rm -f || true'
+{% else -%}
+ExecStartPre=/bin/sh -lc '{% if not use_service_user %}/usr/bin/{% endif %}docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" | xargs -r {% if not use_service_user %}/usr/bin/{% endif %}docker rm -f || true'
+{%- endif %}
+ExecStartPre=/bin/sh -lc '{% if not use_service_user %}/usr/bin/{% endif %}{{ container_runtime_resolved }} network ls --format "{%raw%}{{.Name}}{%endraw%}" | grep -x "$COMPOSE_PROJECT_NAME_web" >/dev/null 2>&1 && {% if not use_service_user %}/usr/bin/{% endif %}{{ container_runtime_resolved }} network rm "$COMPOSE_PROJECT_NAME_web" || true'
+{% if container_runtime_resolved == 'podman' -%}
+ExecStartPre=/bin/sh -lc '{% if not use_service_user %}/usr/bin/{% endif %}podman system prune -f || true'
+{% else -%}
+ExecStartPre=/bin/sh -lc '{% if not use_service_user %}/usr/bin/{% endif %}docker system prune -f || true'
+{%- endif %}
+ExecStartPre=/bin/sh -lc '{% if not use_service_user %}/usr/bin/{% endif %}{{ container_runtime_resolved }} pull $( {{ compose_command }} -f "$COMPOSE_FILE" config --images ) || true'
+
+# ===== START (force recreate) =====
+ExecStart={% if not use_service_user %}/usr/bin/{% endif %}{{ compose_command }} -f "$COMPOSE_FILE" up -d --force-recreate --remove-orphans
+
+# ===== STOP (graceful) =====
+ExecStop=/bin/sh -lc '{% if not use_service_user %}/usr/bin/{% endif %}{{ compose_command }} -f "$COMPOSE_FILE" down --timeout 25 --remove-orphans || true'
+
+{% if container_runtime_resolved == 'podman' and use_service_user -%}
+ExecStopPost=/bin/sh -lc 'podman system prune -f || true'
+{%- endif %}
+
+Restart=on-failure
+TimeoutStartSec=0
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

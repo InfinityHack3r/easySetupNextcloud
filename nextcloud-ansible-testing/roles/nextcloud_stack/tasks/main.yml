@@ -1,0 +1,80 @@
+---
+# 1) Detect + install prerequisites; set compose_command & container_runtime_resolved
+- name: Detect & install prerequisites
+  ansible.builtin.include_tasks: prereqs.yml
+
+# 2) Ensure runtime bits (networks, services)
+- name: Include runtime prerequisites for {{ container_runtime_resolved }}
+  ansible.builtin.include_tasks: "runtime-{{ container_runtime_resolved }}.yml"
+
+# 3) Create service user if enabled
+- name: Create service user
+  when: use_service_user | bool
+  ansible.builtin.user:
+    name: "{{ service_user }}"
+    create_home: true
+    shell: /usr/sbin/nologin
+    system: true
+
+# 4) Ensure directories
+- name: Create project directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ (use_service_user | bool) | ternary(service_user, 'root') }}"
+    group: "{{ (use_service_user | bool) | ternary(service_user, 'root') }}"
+    mode: "0755"
+  loop:
+    - "{{ project_dir }}"
+    - "{{ nc_app_dir }}"
+    - "{{ nc_data_dir }}"
+    - "{{ pg_data_dir }}"
+    - "{{ nginx_dir }}"
+    - "{{ nginx_dir }}/certs"
+
+# 5) Render nginx.conf (reverse_proxy=nginx)
+- name: Render nginx.conf (when reverse_proxy=nginx)
+  when: reverse_proxy == 'nginx'
+  ansible.builtin.template:
+    src: "nginx.conf.j2"
+    dest: "{{ nginx_dir }}/nginx.conf"
+    owner: "{{ (use_service_user | bool) | ternary(service_user, 'root') }}"
+    group: "{{ (use_service_user | bool) | ternary(service_user, 'root') }}"
+    mode: "0644"
+
+# 6) Ensure nginx certs exist (self-signed or provided)
+- name: Ensure nginx certs are present
+  when:
+    - reverse_proxy == 'nginx'
+    - nginx_tls_enabled | bool
+  ansible.builtin.include_tasks: nginx-certs.yml
+
+# 7) Render docker-compose.yml
+- name: Render compose file
+  ansible.builtin.template:
+    src: "docker-compose.yml.j2"
+    dest: "{{ project_dir }}/docker-compose.yml"
+    owner: "{{ (use_service_user | bool) | ternary(service_user, 'root') }}"
+    group: "{{ (use_service_user | bool) | ternary(service_user, 'root') }}"
+    mode: "0644"
+
+# 8) Install systemd unit
+- name: Install systemd unit
+  ansible.builtin.template:
+    src: "nextcloud-stack.service.j2"
+    dest: "/etc/systemd/system/{{ service_name }}.service"
+    mode: "0644"
+  notify: daemon reload
+
+# 9) Enable + start service
+- name: Enable and start service
+  ansible.builtin.systemd:
+    name: "{{ service_name }}"
+    enabled: true
+    state: started
+
+# 10) 🔁 Force a fresh redeploy on every Ansible run
+- name: Force hard refresh (restart) every run
+  ansible.builtin.systemd:
+    name: "{{ service_name }}"
+    state: restarted

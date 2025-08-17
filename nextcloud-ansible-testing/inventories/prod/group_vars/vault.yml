@@ -1,0 +1,11 @@
+# Nextcloud initial admin
+vault_nextcloud_admin_user: "admin"
+vault_nextcloud_admin_pass: "CHANGE_ME"
+
+# Database
+vault_pg_db: "nextcloud"
+vault_pg_user: "nc_user"
+vault_pg_password: "CHANGE_ME"
+
+# Cloudflared (token-based tunnel)
+vault_cloudflared_tunnel_token: "YOUR_TUNNEL_TOKEN"
