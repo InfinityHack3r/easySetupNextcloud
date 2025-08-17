@@ -1,0 +1,35 @@
+# Runtime selection
+container_runtime: auto
+preferred_runtime: docker
+docker_compose_command: "docker compose"
+podman_compose_command: "podman-compose"
+
+# Paths & misc
+project_dir: "/srv/nextcloud"
+compose_project_name: "nextcloud"
+stack_network: "nextcloud_net"
+
+use_service_user: true
+service_user: nextcloud
+
+# SELinux auto-detect (null => detect)
+selinux_enabled: null
+
+# Images
+nextcloud_image: "nextcloud:29-apache"
+postgres_image: "postgres:16"
+redis_image: "redis:7"
+cloudflared_image: "cloudflare/cloudflared:latest"
+
+# Features
+redis_enabled: true
+cloudflared_enabled: true
+reverse_proxy: nginx
+
+# Ports (NGINX binds host ports; Nextcloud Apache & Cloudflared use container network)
+nginx_bind_ip: "0.0.0.0"
+nginx_https_port: 443
+nginx_http_port: 80
+
+# Timezone
+timezone: "UTC"
